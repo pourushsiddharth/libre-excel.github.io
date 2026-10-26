@@ -67,15 +67,15 @@ export const Header: React.FC = () => {
       <div className="flex items-center gap-3">
         {/* Brand Logo & Icon */}
         <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shadow-emerald-500/20 transform hover:scale-105 transition duration-200">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#0b57d0] to-[#1a73e8] flex items-center justify-center text-white shadow-md shadow-blue-500/20 transform hover:scale-105 transition duration-200">
             <FileSpreadsheet className="w-6 h-6" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-extrabold text-lg tracking-tight bg-gradient-to-r from-emerald-700 to-teal-600 bg-clip-text text-transparent">
+              <span className="font-extrabold text-lg tracking-tight bg-gradient-to-r from-[#0b57d0] to-[#1a73e8] bg-clip-text text-transparent">
                 VExcel
               </span>
-              <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
+              <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-blue-100 text-[#0b57d0] border border-blue-200">
                 VEDVAL EXCEL
               </span>
             </div>
@@ -83,7 +83,7 @@ export const Header: React.FC = () => {
               type="text" 
               value={documentTitle}
               onChange={(e) => setDocumentTitle(e.target.value)}
-              className="text-xs text-gray-500 hover:text-gray-900 focus:text-gray-900 border border-transparent hover:border-gray-300 focus:border-emerald-500 rounded px-1.5 py-0.5 outline-none font-medium transition duration-150 w-64 truncate"
+              className="text-xs text-gray-500 hover:text-gray-900 focus:text-gray-900 border border-transparent hover:border-gray-300 focus:border-[#0b57d0] rounded px-1.5 py-0.5 outline-none font-medium transition duration-150 w-64 truncate"
               placeholder="Untitled spreadsheet"
             />
           </div>
@@ -154,7 +154,7 @@ export const Header: React.FC = () => {
         <div className="relative">
           <button
             onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs transition"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-[#0b57d0] hover:bg-[#0842a0] rounded-lg shadow-xs transition"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Export</span>
@@ -164,9 +164,9 @@ export const Header: React.FC = () => {
             <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-100 rounded-xl shadow-xl py-1 z-50 animate-in fade-in zoom-in-95 duration-150">
               <button
                 onClick={handleExportXLSX}
-                className="w-full text-left px-4 py-2.5 text-xs text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 flex items-center gap-2.5 transition"
+                className="w-full text-left px-4 py-2.5 text-xs text-gray-700 hover:bg-blue-50 hover:text-blue-900 flex items-center gap-2.5 transition"
               >
-                <FolderDown className="w-4 h-4 text-emerald-600" />
+                <FolderDown className="w-4 h-4 text-[#0b57d0]" />
                 <div>
                   <div className="font-semibold">Microsoft Excel (.xlsx)</div>
                   <div className="text-[10px] text-gray-400">Open format compatible</div>
@@ -174,9 +174,9 @@ export const Header: React.FC = () => {
               </button>
               <button
                 onClick={handleExportCSV}
-                className="w-full text-left px-4 py-2.5 text-xs text-gray-700 hover:bg-emerald-50 hover:text-emerald-800 flex items-center gap-2.5 transition"
+                className="w-full text-left px-4 py-2.5 text-xs text-gray-700 hover:bg-blue-50 hover:text-blue-900 flex items-center gap-2.5 transition"
               >
-                <FileSpreadsheet className="w-4 h-4 text-teal-600" />
+                <FileSpreadsheet className="w-4 h-4 text-blue-600" />
                 <div>
                   <div className="font-semibold">Comma-Separated (.csv)</div>
                   <div className="text-[10px] text-gray-400">Universal plain data</div>

@@ -11,7 +11,8 @@ import { FindReplaceModal } from './components/Modals/FindReplaceModal';
 import { ShortcutsModal } from './components/Modals/ShortcutsModal';
 import { ShareModal } from './components/Modals/ShareModal';
 import { HelpModal } from './components/Modals/HelpModal';
-import { FeedbackModal } from './components/Modals/FeedbackModal';
+import { SettingsModal } from './components/Modals/SettingsModal';
+import { GoogleTutorialModal } from './components/Modals/GoogleTutorialModal';
 import { useSpreadsheetStore } from './store/useSpreadsheetStore';
 
 export const App: React.FC = () => {
@@ -88,11 +89,11 @@ export const App: React.FC = () => {
       {/* Help, Guide, & Formula Documentation Modal */}
       <HelpModal />
 
-      {/* User Feedback & Experience Modal */}
-      <FeedbackModal 
-        isOpen={isFeedbackModalOpen} 
-        onClose={() => setIsFeedbackModalOpen(false)} 
-      />
+      {/* Spreadsheet Settings & Shortcuts Modal */}
+      <SettingsModal />
+
+      {/* Google-Style Interactive Walkthrough & Tutorial Modal */}
+      <GoogleTutorialModal />
     </div>
   );
 };

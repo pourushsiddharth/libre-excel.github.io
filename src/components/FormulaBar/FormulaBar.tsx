@@ -121,11 +121,13 @@ export const FormulaBar: React.FC = () => {
   };
 
   return (
-    <div className={`flex items-center px-3 bg-white border-b border-gray-200 text-xs select-none relative z-10 transition-all ${
+    <div 
+      id="tutorial-target-formulabar"
+      className={`flex items-center px-3 bg-white border-b border-gray-200 text-xs select-none relative z-10 transition-all ${
       isExpanded ? 'h-16' : 'h-7'
     }`}>
       {/* Name Box (Jump to cell address) */}
-      <div className="flex items-center border border-gray-300 rounded bg-white hover:border-gray-400 focus-within:border-emerald-500 h-5 px-1.5 w-20 shrink-0">
+      <div className="flex items-center border border-gray-300 rounded bg-white hover:border-gray-400 focus-within:border-[#0b57d0] h-5 px-1.5 w-20 shrink-0">
         <input
           type="text"
           value={nameBoxInput}
@@ -153,7 +155,7 @@ export const FormulaBar: React.FC = () => {
           onClick={handleCommit}
           disabled={isReadOnly}
           title="Enter"
-          className="p-1 hover:text-emerald-600 hover:bg-gray-100 rounded transition flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none"
+          className="p-1 hover:text-[#0b57d0] hover:bg-gray-100 rounded transition flex items-center justify-center disabled:opacity-30 disabled:pointer-events-none"
         >
           <span className="material-symbols-outlined text-[16px]">check</span>
         </button>
@@ -170,7 +172,7 @@ export const FormulaBar: React.FC = () => {
           }}
           disabled={isReadOnly}
           title="Insert Function"
-          className="px-1.5 py-0.5 text-gray-600 hover:text-emerald-700 hover:bg-gray-100 rounded font-serif italic font-bold text-xs disabled:opacity-30 disabled:pointer-events-none"
+          className="px-1.5 py-0.5 text-gray-600 hover:text-[#0b57d0] hover:bg-blue-50 rounded font-serif italic font-bold text-xs disabled:opacity-30 disabled:pointer-events-none"
         >
           fx
         </button>

@@ -88,7 +88,10 @@ export const SheetTabs: React.FC = () => {
   };
 
   return (
-    <div className="h-7 bg-[#f3f4f6] border-t border-gray-300 flex items-center justify-between px-2 text-xs select-none relative z-20 font-sans">
+    <div 
+      id="tutorial-target-sheettabs"
+      className="h-7 bg-[#f3f4f6] border-t border-gray-300 flex items-center justify-between px-2 text-xs select-none relative z-20 font-sans"
+    >
       {/* Sheets Navigation Cluster */}
       <div className="flex items-center gap-0.5 overflow-x-auto">
         {/* Navigation arrows & All sheets list button */}
@@ -124,12 +127,12 @@ export const SheetTabs: React.FC = () => {
                 <div
                   key={s.id}
                   onClick={() => { setActiveSheetId(s.id); setIsSheetListOpen(false); }}
-                  className={`px-3 py-1.5 hover:bg-emerald-50 cursor-pointer flex items-center justify-between ${
-                    s.id === activeSheetId ? 'font-bold text-emerald-800 bg-emerald-50/50' : 'text-gray-700'
+                  className={`px-3 py-1.5 hover:bg-blue-50 cursor-pointer flex items-center justify-between ${
+                    s.id === activeSheetId ? 'font-bold text-[#0b57d0] bg-blue-50/70' : 'text-gray-700'
                   }`}
                 >
                   <span>{s.name}</span>
-                  {s.id === activeSheetId && <span className="material-symbols-outlined text-[15px] text-emerald-600">check</span>}
+                  {s.id === activeSheetId && <span className="material-symbols-outlined text-[15px] text-[#0b57d0]">check</span>}
                 </div>
               ))}
             </div>
@@ -143,7 +146,7 @@ export const SheetTabs: React.FC = () => {
             title="Add sheet (+)"
             className="p-1 hover:bg-gray-200 rounded text-gray-700 transition mr-1.5 flex items-center justify-center cursor-pointer"
           >
-            <span className="material-symbols-outlined text-[18px] text-gray-700 hover:text-emerald-700">add</span>
+            <span className="material-symbols-outlined text-[18px] text-gray-700 hover:text-[#0b57d0]">add</span>
           </button>
         )}
 
@@ -160,9 +163,9 @@ export const SheetTabs: React.FC = () => {
                   setEditingSheetId(sheet.id);
                   setTempName(sheet.name);
                 }}
-                className={`flex items-center gap-1.5 px-3 py-1 border-r border-gray-300 cursor-pointer font-medium transition text-xs relative ${
+                className={`flex items-center gap-1.5 px-3.5 py-1 border-r border-gray-300 cursor-pointer font-medium transition text-xs relative ${
                   isActive 
-                    ? 'bg-white text-emerald-900 border-t-2 border-t-emerald-600 font-semibold shadow-xs' 
+                    ? 'bg-white text-[#0b57d0] border-b-2 border-b-[#0b57d0] font-semibold shadow-xs' 
                     : 'hover:bg-gray-200 text-gray-600'
                 }`}
                 style={sheet.tabColor ? { borderBottom: `3px solid ${sheet.tabColor}` } : {}}
@@ -175,7 +178,7 @@ export const SheetTabs: React.FC = () => {
                     onBlur={() => handleFinishRename(sheet.id)}
                     onKeyDown={(e) => e.key === 'Enter' && handleFinishRename(sheet.id)}
                     autoFocus
-                    className="w-20 px-1 py-0.2 font-semibold bg-white border border-emerald-500 rounded outline-none text-xs"
+                    className="w-20 px-1 py-0.2 font-semibold bg-white border border-[#0b57d0] rounded outline-none text-xs"
                   />
                 ) : (
                   <span>{sheet.name}</span>
@@ -223,7 +226,7 @@ export const SheetTabs: React.FC = () => {
         {/* View Layout Controls */}
         <div className="flex items-center gap-1 border-r border-gray-300 pr-2 hidden sm:flex">
           <button title="Normal Grid View" className="p-1 hover:bg-gray-200 rounded text-gray-700 flex items-center justify-center">
-            <span className="material-symbols-outlined text-[17px] text-emerald-800">grid_on</span>
+            <span className="material-symbols-outlined text-[17px] text-[#0b57d0]">grid_on</span>
           </button>
           <button title="Page Break Preview" className="p-1 hover:bg-gray-200 rounded text-gray-500 flex items-center justify-center">
             <span className="material-symbols-outlined text-[17px]">description</span>
@@ -246,7 +249,7 @@ export const SheetTabs: React.FC = () => {
             step="10"
             value={zoomLevel}
             onChange={(e) => setZoomLevel(Number(e.target.value))}
-            className="w-16 h-1 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+            className="w-16 h-1 bg-gray-300 rounded-lg appearance-none cursor-pointer accent-[#0b57d0]"
           />
           <button
             onClick={() => setZoomLevel(zoomLevel + 10)}
@@ -257,7 +260,7 @@ export const SheetTabs: React.FC = () => {
           </button>
           <span 
             onClick={() => setZoomLevel(100)}
-            className="w-9 text-right font-mono font-medium text-[10px] text-gray-700 cursor-pointer hover:text-emerald-700"
+            className="w-9 text-right font-mono font-medium text-[10px] text-gray-700 cursor-pointer hover:text-[#0b57d0]"
             title="Click to reset zoom to 100%"
           >
             {zoomLevel}%

@@ -387,7 +387,9 @@ export const Ribbon: React.FC = () => {
   };
 
   return (
-    <div className={`bg-[#fcfdfd] border-b border-gray-200 select-none font-sans relative z-30 transition-opacity ${
+    <div 
+      id="tutorial-target-ribbon"
+      className={`bg-[#fcfdfd] border-b border-gray-200 select-none font-sans relative z-30 transition-opacity ${
       isReadOnly ? 'opacity-60 pointer-events-none' : ''
     }`}>
       {/* Ribbon Action Toolbar */}
@@ -765,10 +767,10 @@ export const Ribbon: React.FC = () => {
               }}
               title="Conditional Formatting"
               className={`h-7 px-1.5 hover:bg-gray-100 active:bg-gray-200 rounded text-gray-700 flex items-center gap-0.5 transition cursor-pointer ${
-                isConditionalOpen ? 'bg-gray-200/80 ring-1 ring-gray-300' : ''
+                isConditionalOpen ? 'bg-blue-50 ring-1 ring-blue-300' : ''
               }`}
             >
-              <span className="material-symbols-outlined text-[19px] text-[#107c41]">tune</span>
+              <span className="material-symbols-outlined text-[19px] text-[#0b57d0]">tune</span>
               <span className="material-symbols-outlined text-[14px] text-gray-500">arrow_drop_down</span>
             </button>
             {isConditionalOpen && (
@@ -1131,10 +1133,10 @@ export const Ribbon: React.FC = () => {
           <div className="flex items-center gap-1 border-r border-gray-200 pr-2">
             <button
               onClick={() => setIsChartModalOpen(true)}
-              className="h-8 px-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded font-semibold flex items-center gap-1.5 transition"
+              className="h-8 px-2.5 bg-blue-50 hover:bg-blue-100 text-[#0b57d0] rounded font-semibold flex items-center gap-1.5 transition"
               title="Insert Chart"
             >
-              <BarChart3 className="w-4 h-4 text-emerald-700" />
+              <BarChart3 className="w-4 h-4 text-[#0b57d0]" />
               <span>Insert Chart</span>
             </button>
             <button
@@ -1504,7 +1506,7 @@ export const Ribbon: React.FC = () => {
           <div className="flex items-center gap-1 border-r border-gray-200 pr-2">
             <button
               onClick={() => setIsHelpModalOpen(true)}
-              className="h-8 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md font-semibold flex items-center gap-1.5 transition shadow-xs cursor-pointer"
+              className="h-8 px-3 bg-[#0b57d0] hover:bg-[#0842a0] text-white rounded-md font-semibold flex items-center gap-1.5 transition shadow-xs cursor-pointer"
               title="Open Complete User Guide & Process"
             >
               <HelpCircle className="w-4 h-4 text-white" />
@@ -1524,10 +1526,10 @@ export const Ribbon: React.FC = () => {
           <div className="flex items-center gap-1 border-r border-gray-200 pr-2">
             <button
               onClick={() => setIsShortcutsModalOpen(true)}
-              className="h-8 px-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-md font-semibold flex items-center gap-1.5 transition cursor-pointer"
+              className="h-8 px-2.5 bg-blue-50 hover:bg-blue-100 text-[#0b57d0] rounded-md font-semibold flex items-center gap-1.5 transition cursor-pointer"
               title="Keyboard Shortcuts (Ctrl+/)"
             >
-              <Keyboard className="w-4 h-4 text-emerald-700" />
+              <Keyboard className="w-4 h-4 text-[#0b57d0]" />
               <span>Shortcuts (Ctrl+/)</span>
             </button>
           </div>
@@ -1551,7 +1553,7 @@ export const Ribbon: React.FC = () => {
               className="h-8 px-2 hover:bg-gray-100 rounded text-gray-700 flex items-center gap-1.5 transition font-medium cursor-pointer"
               title="Send feedback or feature request"
             >
-              <MessageSquare className="w-4 h-4 text-emerald-600" />
+              <MessageSquare className="w-4 h-4 text-[#0b57d0]" />
               <span>Send Feedback</span>
             </button>
           </div>

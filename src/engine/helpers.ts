@@ -102,3 +102,124 @@ export function generateShareSignature(docId: string, mode: string): string {
 export function verifyShareSignature(docId: string, mode: string, token: string): boolean {
   return generateShareSignature(docId, mode) === token;
 }
+
+/**
+ * Adjusts relative formula cell coordinates when drag-filling across rows/columns.
+ * E.g., =A1+B1 dragged 1 row down becomes =A2+B2, dragged 1 col right becomes =B1+C1.
+ * Supports $ absolute anchors like $A$1, $A1, A$1.
+ */
+export function adjustFormulaReferences(formula: string, deltaCol: number, deltaRow: number): string {
+  if (!formula.startsWith('=')) return formula;
+  
+  // Regex to match cell references with optional dollar signs: ($?)([A-Z]+)($?)([0-9]+)
+  return formula.replace(/(\$?)([A-Z]+)(\$?)([0-9]+)/gi, (match, colLock, colLetters, rowLock, rowStr) => {
+    let col = letterToColIndex(colLetters);
+    let row = parseInt(rowStr, 10) - 1;
+
+    if (!colLock) {
+      col = Math.max(0, col + deltaCol);
+    }
+    if (!rowLock) {
+      row = Math.max(0, row + deltaRow);
+    }
+
+    const colPart = (colLock ? '$' : '') + colIndexToLetter(col);
+    const rowPart = (rowLock ? '$' : '') + (row + 1);
+    return `${colPart}${rowPart}`;
+  });
+}
+
+/**
+ * Generates smart filled value/formula based on sequence or repeated values.
+ * - Formulas: adjust cell references
+ * - Numbers: sequence detection if >= 2 source cells, or +1 increment if 1 number, or repetition
+ * - Text with numbers (Item 1, Day 1, Q1): increments trailing number
+ * - Dates / Days of week / Months: increments appropriately
+ * - Plain strings: repeats values cyclically
+ */
+export function generateFilledCell(
+  sourceCells: Array<{ raw: string; value: any; style?: any }>,
+  stepIndex: number,
+  deltaCol: number,
+  deltaRow: number
+): { raw: string; style?: any } {
+  if (sourceCells.length === 0) return { raw: '' };
+
+  const sourceIndex = stepIndex % sourceCells.length;
+  const cycleCount = Math.floor(stepIndex / sourceCells.length) + 1;
+  const targetSource = sourceCells[sourceIndex];
+  const raw = targetSource.raw;
+
+  // 1. Formula auto-fill with reference adjustment
+  if (raw.startsWith('=')) {
+    return {
+      raw: adjustFormulaReferences(raw, deltaCol, deltaRow),
+      style: targetSource.style ? { ...targetSource.style } : undefined
+    };
+  }
+
+  // 2. Numeric sequence fill
+  // If multiple numbers are selected in sequence, detect slope/step
+  const numericSources = sourceCells.map(c => Number(c.raw));
+  const allNumeric = numericSources.every(n => !isNaN(n) && typeof n === 'number');
+
+  if (allNumeric) {
+    if (sourceCells.length === 1) {
+      // Single number: repeat or increment
+      const baseNum = numericSources[0];
+      const nextNum = baseNum + (stepIndex + 1);
+      return {
+        raw: String(nextNum),
+        style: targetSource.style ? { ...targetSource.style } : undefined
+      };
+    } else {
+      // Linear extrapolation from source sequence
+      const step = (numericSources[numericSources.length - 1] - numericSources[0]) / (sourceCells.length - 1);
+      const nextNum = numericSources[numericSources.length - 1] + step * (stepIndex + 1);
+      return {
+        raw: String(Number(nextNum.toFixed(4))),
+        style: targetSource.style ? { ...targetSource.style } : undefined
+      };
+    }
+  }
+
+  // 3. String ending with numbers (e.g. "Item 1", "Product 10", "Q1", "Test-1")
+  const trailingNumMatch = raw.match(/^(.*?)(\d+)$/);
+  if (trailingNumMatch) {
+    const prefix = trailingNumMatch[1];
+    const baseNum = parseInt(trailingNumMatch[2], 10);
+    const nextNum = baseNum + cycleCount * (sourceCells.length === 1 ? (stepIndex + 1) : 1);
+    return {
+      raw: `${prefix}${nextNum}`,
+      style: targetSource.style ? { ...targetSource.style } : undefined
+    };
+  }
+
+  // 4. Days of week / Month names
+  const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const dayIdx = daysOfWeek.findIndex(d => d.toLowerCase() === raw.trim().toLowerCase());
+  if (dayIdx !== -1) {
+    const nextDay = daysOfWeek[(dayIdx + stepIndex + 1) % 7];
+    return {
+      raw: nextDay,
+      style: targetSource.style ? { ...targetSource.style } : undefined
+    };
+  }
+
+  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const monthIdx = months.findIndex(m => m.toLowerCase() === raw.trim().toLowerCase());
+  if (monthIdx !== -1) {
+    const nextMonth = months[(monthIdx + stepIndex + 1) % 12];
+    return {
+      raw: nextMonth,
+      style: targetSource.style ? { ...targetSource.style } : undefined
+    };
+  }
+
+  // 5. Default: Repeat/Copy source value & styling
+  return {
+    raw,
+    style: targetSource.style ? { ...targetSource.style } : undefined
+  };
+}
+

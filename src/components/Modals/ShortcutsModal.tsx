@@ -95,7 +95,7 @@ export const ShortcutsModal: React.FC = () => {
               value={filterQuery}
               onChange={(e) => setFilterQuery(e.target.value)}
               placeholder="Search shortcuts or keys..."
-              className="w-full pl-9 pr-3 py-1.5 text-xs bg-gray-50 border border-gray-300 rounded-lg outline-none focus:border-emerald-600 focus:bg-white transition"
+              className="w-full pl-9 pr-3 py-1.5 text-xs bg-gray-50 border border-gray-300 rounded-lg outline-none focus:border-[#0b57d0] focus:bg-white transition"
               autoFocus
             />
           </div>
@@ -108,7 +108,7 @@ export const ShortcutsModal: React.FC = () => {
                 onClick={() => setSelectedCategory(cat)}
                 className={`px-3 py-1 rounded-full text-[11px] font-medium tracking-wide transition-all cursor-pointer whitespace-nowrap border select-none ${
                   selectedCategory === cat
-                    ? 'bg-slate-900 border-slate-900 text-white font-medium shadow-xs'
+                    ? 'bg-[#0b57d0] border-[#0b57d0] text-white font-medium shadow-xs'
                     : 'bg-white border-slate-200/80 text-slate-500 hover:text-slate-800 hover:border-slate-300'
                 }`}
               >
@@ -125,7 +125,7 @@ export const ShortcutsModal: React.FC = () => {
               {filteredShortcuts.map((item, idx) => (
                 <div
                   key={idx}
-                  className="flex items-center justify-between p-3 rounded-xl bg-white border border-slate-200/70 hover:border-emerald-500/80 transition-colors shadow-2xs"
+                  className="flex items-center justify-between p-3 rounded-xl bg-white border border-slate-200/70 hover:border-[#0b57d0] transition-colors shadow-2xs"
                 >
                   <div className="flex-1 pr-3 min-w-0">
                     <span className="text-[12px] text-slate-800 font-medium tracking-wide block truncate">{item.description}</span>
@@ -159,7 +159,7 @@ export const ShortcutsModal: React.FC = () => {
           </div>
           <button
             onClick={() => setIsShortcutsModalOpen(false)}
-            className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-medium text-xs tracking-wide shadow-xs transition cursor-pointer"
+            className="px-5 py-2 bg-[#0b57d0] hover:bg-[#0842a0] text-white rounded-full font-medium text-xs tracking-wide shadow-xs transition cursor-pointer"
           >
             Got it
           </button>

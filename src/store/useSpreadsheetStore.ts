@@ -52,6 +52,7 @@ interface SpreadsheetState {
 
   // Cell editing & calculation
   setCellValue: (cellId: string, raw: string, skipSnapshot?: boolean) => void;
+  batchSetCells: (updates: { [cellId: string]: { raw: string; style?: any } }) => void;
   setSelectionStyle: (style: Partial<CellStyle>) => void;
   adjustSelectionDecimals: (delta: number) => void;
   recalculateSheet: (sheetId?: string) => void;
@@ -98,8 +99,12 @@ interface SpreadsheetState {
   setIsShortcutsModalOpen: (open: boolean) => void;
   isHelpModalOpen: boolean;
   setIsHelpModalOpen: (open: boolean) => void;
+  isSettingsModalOpen: boolean;
+  setIsSettingsModalOpen: (open: boolean) => void;
   isFeedbackModalOpen: boolean;
   setIsFeedbackModalOpen: (open: boolean) => void;
+  isTutorialOpen: boolean;
+  setIsTutorialOpen: (open: boolean) => void;
   zoomLevel: number;
   setZoomLevel: (zoom: number) => void;
 }
@@ -112,12 +117,12 @@ const initialSheet: Worksheet = {
   colWidths: { 0: 160, 1: 100, 2: 110, 3: 120 },
   rowHeights: { 0: 36, 1: 26, 3: 30 },
   data: {
-    'A1': { raw: 'VExcel Pro Suite (Vedval Excel)', value: 'VExcel Pro Suite (Vedval Excel)', style: { bold: true, fontSize: 16, textColor: '#0f7b0f', fontFamily: 'Calibri' } },
+    'A1': { raw: 'Vedval Excel', value: 'Vedval Excel', style: { bold: true, fontSize: 16, textColor: '#0b57d0', fontFamily: 'Calibri' } },
     'A2': { raw: 'World-Class Spreadsheet Architecture', value: 'World-Class Spreadsheet Architecture', style: { italic: true, textColor: '#4b5563', fontFamily: 'Calibri' } },
-    'A4': { raw: 'Product Name', value: 'Product Name', style: { bold: true, bgColor: '#f1f5f9', borderBottom: true, align: 'left' } },
-    'B4': { raw: 'Quantity', value: 'Quantity', style: { bold: true, bgColor: '#f1f5f9', borderBottom: true, align: 'right' } },
-    'C4': { raw: 'Unit Price', value: 'Unit Price', style: { bold: true, bgColor: '#f1f5f9', borderBottom: true, align: 'right' } },
-    'D4': { raw: 'Total Revenue', value: 'Total Revenue', style: { bold: true, bgColor: '#f1f5f9', borderBottom: true, align: 'right' } },
+    'A4': { raw: 'Product Name', value: 'Product Name', style: { bold: true, bgColor: '#f1f5f9', align: 'left' } },
+    'B4': { raw: 'Quantity', value: 'Quantity', style: { bold: true, bgColor: '#f1f5f9', align: 'right' } },
+    'C4': { raw: 'Unit Price', value: 'Unit Price', style: { bold: true, bgColor: '#f1f5f9', align: 'right' } },
+    'D4': { raw: 'Total Revenue', value: 'Total Revenue', style: { bold: true, bgColor: '#f1f5f9', align: 'right' } },
     'A5': { raw: 'MacBook Pro M3 Max', value: 'MacBook Pro M3 Max', comment: { author: 'Admin', text: 'Top seller this quarter', timestamp: '10:30 AM' } },
     'B5': { raw: '12', value: 12, style: { align: 'right' } },
     'C5': { raw: '2499', value: 2499, style: { format: 'currency', align: 'right' } },
@@ -130,16 +135,16 @@ const initialSheet: Worksheet = {
     'B7': { raw: '45', value: 45, style: { align: 'right' } },
     'C7': { raw: '99', value: 99, style: { format: 'currency', align: 'right' } },
     'D7': { raw: '=B7*C7', value: 4455, style: { format: 'currency', align: 'right', bold: true } },
-    'A8': { raw: 'Quarterly Summary', value: 'Quarterly Summary', style: { bold: true, bgColor: '#dcfce7', borderTop: true, borderBottom: true } },
-    'B8': { raw: '=SUM(B5:B7)', value: 81, style: { bold: true, align: 'right', bgColor: '#dcfce7', borderTop: true, borderBottom: true } },
-    'C8': { raw: '', value: '', style: { bgColor: '#dcfce7', borderTop: true, borderBottom: true } },
-    'D8': { raw: '=SUM(D5:D7)', value: 48819, style: { bold: true, format: 'currency', align: 'right', bgColor: '#dcfce7', borderTop: true, borderBottom: true } }
+    'A8': { raw: 'Quarterly Summary', value: 'Quarterly Summary', style: { bold: true, bgColor: '#e8f0fe', textColor: '#0b57d0' } },
+    'B8': { raw: '=SUM(B5:B7)', value: 81, style: { bold: true, align: 'right', bgColor: '#e8f0fe' } },
+    'C8': { raw: '', value: '', style: { bgColor: '#e8f0fe' } },
+    'D8': { raw: '=SUM(D5:D7)', value: 48819, style: { bold: true, format: 'currency', align: 'right', bgColor: '#e8f0fe', textColor: '#0b57d0' } }
   }
 };
 
 const getInitialStateFromUrl = () => {
   let docId = 'doc_workbook_1';
-  let initialTitle = 'Book';
+  let initialTitle = 'Untitled spreadsheet';
   let initialSheets = [initialSheet];
   let initialActiveSheetId = initialSheet.id;
   let initialActiveCell = { col: 0, row: 3 };
@@ -159,7 +164,9 @@ const getInitialStateFromUrl = () => {
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
-          if (parsed.documentTitle) initialTitle = parsed.documentTitle;
+          if (parsed.documentTitle && parsed.documentTitle !== 'Book') {
+            initialTitle = parsed.documentTitle;
+          }
           if (parsed.sheets && parsed.sheets.length > 0) {
             initialSheets = parsed.sheets;
             initialActiveSheetId = parsed.activeSheetId || parsed.sheets[0].id;
@@ -203,6 +210,36 @@ const getInitialStateFromUrl = () => {
       const savedDocId = localStorage.getItem('libre_current_doc_id');
       if (savedDocId) {
         docId = savedDocId;
+        const saved = localStorage.getItem('libre_doc_' + savedDocId);
+        if (saved) {
+          try {
+            const parsed = JSON.parse(saved);
+            if (parsed.documentTitle && parsed.documentTitle !== 'Book') {
+              initialTitle = parsed.documentTitle;
+            }
+            if (parsed.sheets && parsed.sheets.length > 0) {
+              // Strip legacy borderTop/borderBottom from sample rows if present
+              parsed.sheets.forEach((ws: any) => {
+                if (ws?.data) {
+                  ['A4', 'B4', 'C4', 'D4', 'A8', 'B8', 'C8', 'D8'].forEach(k => {
+                    if (ws.data[k]?.style) {
+                      delete ws.data[k].style.borderBottom;
+                      delete ws.data[k].style.borderTop;
+                      delete ws.data[k].style.borderLeft;
+                      delete ws.data[k].style.borderRight;
+                      delete ws.data[k].style.borderAll;
+                      delete ws.data[k].style.borderBox;
+                    }
+                  });
+                }
+              });
+              initialSheets = parsed.sheets;
+              initialActiveSheetId = parsed.activeSheetId || parsed.sheets[0].id;
+            }
+          } catch (e) {
+            console.error('Error loading default doc from storage:', e);
+          }
+        }
       } else {
         docId = 'doc_' + Math.random().toString(36).substring(2, 9);
         localStorage.setItem('libre_current_doc_id', docId);
@@ -513,8 +550,12 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
   setIsShortcutsModalOpen: (open) => set({ isShortcutsModalOpen: open }),
   isHelpModalOpen: false,
   setIsHelpModalOpen: (open) => set({ isHelpModalOpen: open }),
+  isSettingsModalOpen: false,
+  setIsSettingsModalOpen: (open) => set({ isSettingsModalOpen: open }),
   isFeedbackModalOpen: false,
   setIsFeedbackModalOpen: (open) => set({ isFeedbackModalOpen: open }),
+  isTutorialOpen: false,
+  setIsTutorialOpen: (open) => set({ isTutorialOpen: open }),
   zoomLevel: 100,
   setZoomLevel: (zoom) => set({ zoomLevel: Math.max(50, Math.min(200, zoom)) }),
 
@@ -638,6 +679,40 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
         value: raw.startsWith('=') ? raw : isNaN(Number(raw)) || raw.trim() === '' ? raw : Number(raw)
       }
     };
+
+    // Recalculate formulas in sheet
+    for (const key in updatedData) {
+      const c = updatedData[key];
+      if (c && c.raw && c.raw.startsWith('=')) {
+        c.value = evaluateFormula(c.raw, updatedData);
+      }
+    }
+
+    set((state) => ({
+      sheets: state.sheets.map((s) => (s.id === activeSheetId ? { ...s, data: updatedData } : s))
+    }));
+  },
+
+  batchSetCells: (updates) => {
+    const { sheets, activeSheetId, permissionMode } = get();
+    if (permissionMode === 'view' || Object.keys(updates).length === 0) return;
+    const sheet = sheets.find((s) => s.id === activeSheetId);
+    if (!sheet) return;
+
+    get().saveSnapshot();
+
+    const updatedData: SheetData = { ...sheet.data };
+    for (const [cellId, update] of Object.entries(updates)) {
+      const currentCell = updatedData[cellId] || { raw: '', value: '' };
+      const raw = update.raw;
+      const newStyle = update.style ? { ...(currentCell.style || {}), ...update.style } : currentCell.style;
+      updatedData[cellId] = {
+        ...currentCell,
+        raw,
+        value: raw.startsWith('=') ? raw : isNaN(Number(raw)) || raw.trim() === '' ? raw : Number(raw),
+        style: newStyle
+      };
+    }
 
     // Recalculate formulas in sheet
     for (const key in updatedData) {

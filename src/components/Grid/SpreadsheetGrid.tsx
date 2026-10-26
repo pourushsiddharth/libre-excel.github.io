@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useSpreadsheetStore } from '../../store/useSpreadsheetStore';
-import { colIndexToLetter, coordsToCellId, cellIdToCoords, isColorDark } from '../../engine/helpers';
-import { CellCoords } from '../../types/spreadsheet';
+import { colIndexToLetter, coordsToCellId, cellIdToCoords, isColorDark, generateFilledCell } from '../../engine/helpers';
+import { CellCoords, SelectionRange } from '../../types/spreadsheet';
 import { 
   Scissors, 
   Copy, 
@@ -27,6 +27,7 @@ export const SpreadsheetGrid: React.FC = () => {
     selection,
     setSelection,
     setCellValue,
+    batchSetCells,
     selectAll,
     selectRow,
     selectColumn,
@@ -51,11 +52,29 @@ export const SpreadsheetGrid: React.FC = () => {
   const [editingCell, setEditingCell] = useState<string | null>(null);
   const [editInput, setEditInput] = useState('');
   const [isMouseDown, setIsMouseDown] = useState(false);
+  const [isFillDragging, setIsFillDragging] = useState(false);
+  const [fillEndCell, setFillEndCell] = useState<CellCoords | null>(null);
   const [resizingCol, setResizingCol] = useState<{ col: number; startX: number; startWidth: number } | null>(null);
   const [resizingRow, setResizingRow] = useState<{ row: number; startY: number; startHeight: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; col: number; row: number } | null>(null);
   const [commentModal, setCommentModal] = useState<{ cellId: string; text: string } | null>(null);
   const [hoveredComment, setHoveredComment] = useState<{ x: number; y: number; cellId: string } | null>(null);
+
+  const fillDragStateRef = useRef<{
+    isDragging: boolean;
+    sourceMinCol: number;
+    sourceMaxCol: number;
+    sourceMinRow: number;
+    sourceMaxRow: number;
+    currentEnd: CellCoords | null;
+  }>({
+    isDragging: false,
+    sourceMinCol: 0,
+    sourceMaxCol: 0,
+    sourceMinRow: 0,
+    sourceMaxRow: 0,
+    currentEnd: null
+  });
 
   const inputRef = useRef<HTMLInputElement>(null);
   const gridContainerRef = useRef<HTMLDivElement>(null);
@@ -118,6 +137,11 @@ export const SpreadsheetGrid: React.FC = () => {
   };
 
   const handleMouseEnter = (col: number, row: number) => {
+    if (fillDragStateRef.current.isDragging) {
+      fillDragStateRef.current.currentEnd = { col, row };
+      setFillEndCell({ col, row });
+      return;
+    }
     if (isMouseDown) {
       setSelection({
         start: selection.start,
@@ -148,6 +172,160 @@ export const SpreadsheetGrid: React.FC = () => {
     setResizingRow({ row, startY: e.clientY, startHeight: getRowHeight(row) });
   };
 
+  const handleFillHandleMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (isReadOnly) return;
+    commitEdit();
+
+    const minC = Math.min(selection.start.col, selection.end.col);
+    const maxC = Math.max(selection.start.col, selection.end.col);
+    const minR = Math.min(selection.start.row, selection.end.row);
+    const maxR = Math.max(selection.start.row, selection.end.row);
+
+    fillDragStateRef.current = {
+      isDragging: true,
+      sourceMinCol: minC,
+      sourceMaxCol: maxC,
+      sourceMinRow: minR,
+      sourceMaxRow: maxR,
+      currentEnd: { col: maxC, row: maxR }
+    };
+    setIsFillDragging(true);
+    setFillEndCell({ col: maxC, row: maxR });
+  };
+
+  const executeFill = useCallback((targetEndCol: number, targetEndRow: number) => {
+    const { sourceMinCol, sourceMaxCol, sourceMinRow, sourceMaxRow } = fillDragStateRef.current;
+    if (sourceMinCol === undefined) return;
+
+    // Determine fill direction (row-wise down/up, or col-wise right/left)
+    const deltaDown = targetEndRow - sourceMaxRow;
+    const deltaUp = sourceMinRow - targetEndRow;
+    const deltaRight = targetEndCol - sourceMaxCol;
+    const deltaLeft = sourceMinCol - targetEndCol;
+
+    const maxDelta = Math.max(deltaDown, deltaUp, deltaRight, deltaLeft);
+    if (maxDelta <= 0) return; // No drag extension
+
+    const updates: { [cellId: string]: { raw: string; style?: any } } = {};
+
+    // 1. Dragging Down (Most common)
+    if (maxDelta === deltaDown) {
+      for (let c = sourceMinCol; c <= sourceMaxCol; c++) {
+        // Collect source column slice
+        const sourceCells: Array<{ raw: string; value: any; style?: any }> = [];
+        for (let r = sourceMinRow; r <= sourceMaxRow; r++) {
+          const id = coordsToCellId(c, r);
+          const cell = currentSheet.data[id];
+          sourceCells.push({
+            raw: cell?.raw ?? '',
+            value: cell?.value ?? '',
+            style: cell?.style
+          });
+        }
+
+        let step = 0;
+        for (let r = sourceMaxRow + 1; r <= targetEndRow; r++) {
+          const filled = generateFilledCell(sourceCells, step, 0, r - (sourceMinRow + (step % sourceCells.length)));
+          const targetId = coordsToCellId(c, r);
+          updates[targetId] = filled;
+          step++;
+        }
+      }
+      setSelection({
+        start: { col: sourceMinCol, row: sourceMinRow },
+        end: { col: sourceMaxCol, row: targetEndRow }
+      });
+    } 
+    // 2. Dragging Right
+    else if (maxDelta === deltaRight) {
+      for (let r = sourceMinRow; r <= sourceMaxRow; r++) {
+        // Collect source row slice
+        const sourceCells: Array<{ raw: string; value: any; style?: any }> = [];
+        for (let c = sourceMinCol; c <= sourceMaxCol; c++) {
+          const id = coordsToCellId(c, r);
+          const cell = currentSheet.data[id];
+          sourceCells.push({
+            raw: cell?.raw ?? '',
+            value: cell?.value ?? '',
+            style: cell?.style
+          });
+        }
+
+        let step = 0;
+        for (let c = sourceMaxCol + 1; c <= targetEndCol; c++) {
+          const filled = generateFilledCell(sourceCells, step, c - (sourceMinCol + (step % sourceCells.length)), 0);
+          const targetId = coordsToCellId(c, r);
+          updates[targetId] = filled;
+          step++;
+        }
+      }
+      setSelection({
+        start: { col: sourceMinCol, row: sourceMinRow },
+        end: { col: targetEndCol, row: sourceMaxRow }
+      });
+    }
+    // 3. Dragging Up
+    else if (maxDelta === deltaUp) {
+      for (let c = sourceMinCol; c <= sourceMaxCol; c++) {
+        const sourceCells: Array<{ raw: string; value: any; style?: any }> = [];
+        for (let r = sourceMinRow; r <= sourceMaxRow; r++) {
+          const id = coordsToCellId(c, r);
+          const cell = currentSheet.data[id];
+          sourceCells.push({
+            raw: cell?.raw ?? '',
+            value: cell?.value ?? '',
+            style: cell?.style
+          });
+        }
+
+        let step = 0;
+        for (let r = sourceMinRow - 1; r >= targetEndRow; r--) {
+          const filled = generateFilledCell(sourceCells, step, 0, r - sourceMinRow);
+          const targetId = coordsToCellId(c, r);
+          updates[targetId] = filled;
+          step++;
+        }
+      }
+      setSelection({
+        start: { col: sourceMinCol, row: targetEndRow },
+        end: { col: sourceMaxCol, row: sourceMaxRow }
+      });
+    }
+    // 4. Dragging Left
+    else if (maxDelta === deltaLeft) {
+      for (let r = sourceMinRow; r <= sourceMaxRow; r++) {
+        const sourceCells: Array<{ raw: string; value: any; style?: any }> = [];
+        for (let c = sourceMinCol; c <= sourceMaxCol; c++) {
+          const id = coordsToCellId(c, r);
+          const cell = currentSheet.data[id];
+          sourceCells.push({
+            raw: cell?.raw ?? '',
+            value: cell?.value ?? '',
+            style: cell?.style
+          });
+        }
+
+        let step = 0;
+        for (let c = sourceMinCol - 1; c >= targetEndCol; c--) {
+          const filled = generateFilledCell(sourceCells, step, c - sourceMinCol, 0);
+          const targetId = coordsToCellId(c, r);
+          updates[targetId] = filled;
+          step++;
+        }
+      }
+      setSelection({
+        start: { col: targetEndCol, row: sourceMinRow },
+        end: { col: sourceMaxCol, row: sourceMaxRow }
+      });
+    }
+
+    if (Object.keys(updates).length > 0) {
+      batchSetCells(updates);
+    }
+  }, [currentSheet.data, batchSetCells, setSelection]);
+
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (resizingCol) {
@@ -163,6 +341,16 @@ export const SpreadsheetGrid: React.FC = () => {
       setIsMouseDown(false);
       setResizingCol(null);
       setResizingRow(null);
+
+      if (fillDragStateRef.current.isDragging) {
+        const end = fillDragStateRef.current.currentEnd;
+        fillDragStateRef.current.isDragging = false;
+        setIsFillDragging(false);
+        setFillEndCell(null);
+        if (end) {
+          executeFill(end.col, end.row);
+        }
+      }
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -171,7 +359,7 @@ export const SpreadsheetGrid: React.FC = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [resizingCol, resizingRow, setColWidth, setRowHeight]);
+  }, [resizingCol, resizingRow, setColWidth, setRowHeight, executeFill]);
 
   // Global click to close context menu
   useEffect(() => {
@@ -426,8 +614,15 @@ export const SpreadsheetGrid: React.FC = () => {
   const minRow = Math.min(selection.start.row, selection.end.row);
   const maxRow = Math.max(selection.start.row, selection.end.row);
 
+  // Drag fill bounding box preview
+  const fillMinCol = isFillDragging && fillEndCell ? Math.min(minCol, fillEndCell.col) : minCol;
+  const fillMaxCol = isFillDragging && fillEndCell ? Math.max(maxCol, fillEndCell.col) : maxCol;
+  const fillMinRow = isFillDragging && fillEndCell ? Math.min(minRow, fillEndCell.row) : minRow;
+  const fillMaxRow = isFillDragging && fillEndCell ? Math.max(maxRow, fillEndCell.row) : maxRow;
+
   return (
     <div
+      id="tutorial-target-grid"
       ref={gridContainerRef}
       className={
         'flex-1 overflow-auto relative select-none bg-white font-sans ' +
@@ -461,21 +656,21 @@ export const SpreadsheetGrid: React.FC = () => {
                 className={
                   'border-r border-gray-300 flex items-center justify-center relative cursor-pointer select-none transition-colors text-[11px] ' +
                   (isColActive
-                    ? 'bg-[#107c41] !text-white font-bold'
+                    ? 'bg-[#1a73e8] !text-white font-bold'
                     : isColSelected
-                    ? 'bg-emerald-100 !text-emerald-950 font-bold'
+                    ? 'bg-[#e8f0fe] !text-[#1a73e8] font-bold'
                     : 'bg-[#f8f9fa] !text-gray-700 font-semibold hover:bg-gray-200')
                 }
                 style={{ 
                   width: colW, 
                   height: DEFAULT_ROW_HEIGHT,
-                  backgroundColor: isColActive ? '#107c41' : isColSelected ? '#d1fae5' : '#f8f9fa',
-                  color: isColActive ? '#ffffff' : isColSelected ? '#064e3b' : '#374151'
+                  backgroundColor: isColActive ? '#1a73e8' : isColSelected ? '#e8f0fe' : '#f8f9fa',
+                  color: isColActive ? '#ffffff' : isColSelected ? '#1a73e8' : '#374151'
                 }}
               >
                 <span 
                   className="leading-none"
-                  style={{ color: isColActive ? '#ffffff' : isColSelected ? '#064e3b' : '#374151' }}
+                  style={{ color: isColActive ? '#ffffff' : isColSelected ? '#1a73e8' : '#374151' }}
                 >
                   {colIndexToLetter(c)}
                 </span>
@@ -483,7 +678,7 @@ export const SpreadsheetGrid: React.FC = () => {
                 {/* Column resize draggable divider handle */}
                 <div
                   onMouseDown={(e) => handleColResizeMouseDown(c, e)}
-                  className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-emerald-600 z-10"
+                  className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-[#1a73e8] z-10"
                   title="Drag to resize column"
                 />
               </div>
@@ -505,21 +700,21 @@ export const SpreadsheetGrid: React.FC = () => {
                 className={
                   'sticky left-0 z-10 border-r border-gray-300 flex items-center justify-center text-[11px] select-none cursor-pointer transition-colors relative ' +
                   (isRowActive
-                    ? 'bg-[#107c41] !text-white font-bold'
+                    ? 'bg-[#1a73e8] !text-white font-bold'
                     : isRowSelected
-                    ? 'bg-emerald-100 !text-emerald-950 font-bold'
+                    ? 'bg-[#e8f0fe] !text-[#1a73e8] font-bold'
                     : 'bg-[#f8f9fa] !text-gray-700 font-semibold hover:bg-gray-200')
                 }
                 style={{ 
                   width: HEADER_COL_WIDTH, 
                   height: rowH,
-                  backgroundColor: isRowActive ? '#107c41' : isRowSelected ? '#d1fae5' : '#f8f9fa',
-                  color: isRowActive ? '#ffffff' : isRowSelected ? '#064e3b' : '#374151'
+                  backgroundColor: isRowActive ? '#1a73e8' : isRowSelected ? '#e8f0fe' : '#f8f9fa',
+                  color: isRowActive ? '#ffffff' : isRowSelected ? '#1a73e8' : '#374151'
                 }}
               >
                 <span 
                   className="leading-none"
-                  style={{ color: isRowActive ? '#ffffff' : isRowSelected ? '#064e3b' : '#374151' }}
+                  style={{ color: isRowActive ? '#ffffff' : isRowSelected ? '#1a73e8' : '#374151' }}
                 >
                   {r + 1}
                 </span>
@@ -527,7 +722,7 @@ export const SpreadsheetGrid: React.FC = () => {
                 {/* Row resize draggable divider handle */}
                 <div
                   onMouseDown={(e) => handleRowResizeMouseDown(r, e)}
-                  className="absolute left-0 right-0 bottom-0 h-1.5 cursor-row-resize hover:bg-emerald-600 z-10"
+                  className="absolute left-0 right-0 bottom-0 h-1.5 cursor-row-resize hover:bg-[#1a73e8] z-10"
                   title="Drag to resize row"
                 />
               </div>
@@ -581,6 +776,9 @@ export const SpreadsheetGrid: React.FC = () => {
                   }
                 }
 
+                const isFillSelected = isFillDragging && c >= fillMinCol && c <= fillMaxCol && r >= fillMinRow && r <= fillMaxRow;
+                const isBottomRightOfSelection = c === maxCol && r === maxRow;
+
                 return (
                   <div
                     key={cellId}
@@ -592,10 +790,15 @@ export const SpreadsheetGrid: React.FC = () => {
                     className={
                       'border-r border-gray-200 px-2 flex items-center text-xs relative select-none truncate transition-colors ' +
                       (isActive
-                        ? 'outline-2 outline-[#107c41] outline-offset-[-2px] z-10 bg-white shadow-2xs'
+                        ? 'outline-2 outline-[#1a73e8] outline-offset-[-2px] z-10 bg-white shadow-2xs '
                         : isSelected
-                        ? 'bg-emerald-50/70'
-                        : 'hover:bg-gray-50/70')
+                        ? 'bg-[#e8f0fe]/80 '
+                        : 'hover:bg-gray-50/70 ') +
+                      (isFillSelected && !isSelected ? 'bg-blue-50/50 ' : '') +
+                      (isFillDragging && r === fillMinRow && c >= fillMinCol && c <= fillMaxCol ? 'border-t-2 !border-t-[#1a73e8] ' : '') +
+                      (isFillDragging && r === fillMaxRow && c >= fillMinCol && c <= fillMaxCol ? 'border-b-2 !border-b-[#1a73e8] ' : '') +
+                      (isFillDragging && c === fillMinCol && r >= fillMinRow && r <= fillMaxRow ? 'border-l-2 !border-l-[#1a73e8] ' : '') +
+                      (isFillDragging && c === fillMaxCol && r >= fillMinRow && r <= fillMaxRow ? 'border-r-2 !border-r-[#1a73e8] ' : '')
                     }
                     style={{
                       width: colW,
@@ -652,11 +855,12 @@ export const SpreadsheetGrid: React.FC = () => {
                       />
                     )}
 
-                    {/* Drag fill handle on active cell bottom right */}
-                    {isActive && (
+                    {/* Drag fill handle on bottom right of selected range / active cell (Google Sheets authentic blue dot) */}
+                    {isBottomRightOfSelection && (
                       <div 
-                        className="absolute -bottom-1 -right-1 w-2 h-2 bg-[#107c41] border border-white cursor-crosshair z-20 rounded-xs"
-                        title="Drag fill handle"
+                        onMouseDown={handleFillHandleMouseDown}
+                        className="absolute -bottom-1 -right-1 w-2.5 h-2.5 bg-[#1a73e8] border border-white cursor-crosshair z-30 rounded-xs shadow-xs hover:scale-125 transition-transform"
+                        title="Drag to auto-fill cells or copy sequence"
                       />
                     )}
                   </div>
@@ -676,21 +880,21 @@ export const SpreadsheetGrid: React.FC = () => {
         >
           <button
             onClick={() => { alert('Cut (Ctrl+X)'); setContextMenu(null); }}
-            className="w-full text-left px-3.5 py-1.5 hover:bg-emerald-50 hover:text-emerald-900 flex items-center justify-between"
+            className="w-full text-left px-3.5 py-1.5 hover:bg-blue-50 hover:text-blue-900 flex items-center justify-between"
           >
             <div className="flex items-center gap-2"><Scissors className="w-3.5 h-3.5" /><span>Cut</span></div>
             <span className="text-[10px] text-gray-400">Ctrl+X</span>
           </button>
           <button
             onClick={() => { alert('Copy (Ctrl+C)'); setContextMenu(null); }}
-            className="w-full text-left px-3.5 py-1.5 hover:bg-emerald-50 hover:text-emerald-900 flex items-center justify-between"
+            className="w-full text-left px-3.5 py-1.5 hover:bg-blue-50 hover:text-blue-900 flex items-center justify-between"
           >
             <div className="flex items-center gap-2"><Copy className="w-3.5 h-3.5" /><span>Copy</span></div>
             <span className="text-[10px] text-gray-400">Ctrl+C</span>
           </button>
           <button
             onClick={() => { alert('Paste (Ctrl+V)'); setContextMenu(null); }}
-            className="w-full text-left px-3.5 py-1.5 hover:bg-emerald-50 hover:text-emerald-900 flex items-center justify-between"
+            className="w-full text-left px-3.5 py-1.5 hover:bg-blue-50 hover:text-blue-900 flex items-center justify-between"
           >
             <div className="flex items-center gap-2"><Clipboard className="w-3.5 h-3.5" /><span>Paste</span></div>
             <span className="text-[10px] text-gray-400">Ctrl+V</span>
@@ -700,16 +904,16 @@ export const SpreadsheetGrid: React.FC = () => {
 
           <button
             onClick={() => { insertRow(contextMenu.row); setContextMenu(null); }}
-            className="w-full text-left px-3.5 py-1.5 hover:bg-emerald-50 hover:text-emerald-900 flex items-center gap-2"
+            className="w-full text-left px-3.5 py-1.5 hover:bg-blue-50 hover:text-blue-900 flex items-center gap-2"
           >
-            <PlusSquare className="w-3.5 h-3.5 text-emerald-600" />
+            <PlusSquare className="w-3.5 h-3.5 text-[#1a73e8]" />
             <span>Insert 1 row above</span>
           </button>
           <button
             onClick={() => { insertCol(contextMenu.col); setContextMenu(null); }}
-            className="w-full text-left px-3.5 py-1.5 hover:bg-emerald-50 hover:text-emerald-900 flex items-center gap-2"
+            className="w-full text-left px-3.5 py-1.5 hover:bg-blue-50 hover:text-blue-900 flex items-center gap-2"
           >
-            <PlusSquare className="w-3.5 h-3.5 text-emerald-600" />
+            <PlusSquare className="w-3.5 h-3.5 text-[#1a73e8]" />
             <span>Insert 1 column left</span>
           </button>
           <button
@@ -742,7 +946,7 @@ export const SpreadsheetGrid: React.FC = () => {
               setCommentModal({ cellId, text: currentSheet.data[cellId]?.comment?.text || '' });
               setContextMenu(null);
             }}
-            className="w-full text-left px-3.5 py-1.5 hover:bg-emerald-50 hover:text-emerald-900 flex items-center gap-2 font-medium"
+            className="w-full text-left px-3.5 py-1.5 hover:bg-blue-50 hover:text-blue-900 flex items-center gap-2 font-medium"
           >
             <MessageSquarePlus className="w-3.5 h-3.5 text-emerald-600" />
             <span>Add / Edit Comment</span>
