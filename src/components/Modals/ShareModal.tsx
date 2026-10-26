@@ -33,13 +33,14 @@ export const ShareModal: React.FC = () => {
   // Sync state to storage
   useEffect(() => {
     if (isShareModalOpen && typeof window !== 'undefined') {
-      const { editSecret, viewSecret } = getDocumentCapabilities(docId);
+      const { editSecret, viewSecret, selfCertDocId } = getDocumentCapabilities(docId);
       const ownerId = localStorage.getItem('libre_owner_token') || 'owner_' + Math.random().toString(36).substring(2, 9);
       localStorage.setItem('libre_owner_token', ownerId);
-      localStorage.setItem(
-        'libre_doc_' + docId,
-        JSON.stringify({ documentTitle, sheets, activeSheetId, ownerId, editSecret, viewSecret })
-      );
+      const payload = JSON.stringify({ documentTitle, sheets, activeSheetId, ownerId, editSecret, viewSecret });
+      localStorage.setItem('libre_doc_' + docId, payload);
+      if (selfCertDocId && selfCertDocId !== docId) {
+        localStorage.setItem('libre_doc_' + selfCertDocId, payload);
+      }
     }
   }, [isShareModalOpen, docId, documentTitle, sheets, activeSheetId]);
 
@@ -58,16 +59,18 @@ export const ShareModal: React.FC = () => {
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
 
+  const { editSecret, viewSecret, selfCertDocId } = getDocumentCapabilities(docId);
+  const sharedDocId = selfCertDocId || docId;
+
   const searchParams = new URLSearchParams();
-  searchParams.set('doc', docId);
+  searchParams.set('doc', sharedDocId);
   searchParams.set('sheet', sheetName);
   if (linkToCell) {
     searchParams.set('cell', cellId);
   }
   searchParams.set('mode', permission);
-  const { editSecret, viewSecret } = getDocumentCapabilities(docId);
   const token = permission === 'edit'
-    ? `e1_${editSecret}_${viewSecret}`
+    ? `e1_${editSecret}`
     : `v1_${viewSecret}`;
   searchParams.set('token', token);
 

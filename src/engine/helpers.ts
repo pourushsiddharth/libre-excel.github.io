@@ -167,23 +167,16 @@ export function sha256(ascii: string): string {
  * - editSecret: 128-bit high-entropy random secret key (known only by creator/editors).
  * - viewSecret: SHA-256(editSecret + ':' + docId + ':libre_view_cap')
  * Because SHA-256 is an irreversible one-way cryptographic hash, holders of viewSecret
- * cannot mathematically reverse-engineer editSecret even with full access to the client code.
+/**
+ * Generates a Self-Certifying Document identity using a 3-level hash chain:
+ * Level 1: editSecret (128-bit random private proof, known only to owner/editors)
+ * Level 2: viewSecret = SHA-256(editSecret + ':libre_view_cap')
+ * Level 3: docId = 'doc_' + SHA-256(viewSecret + ':libre_doc_anchor').slice(0, 16)
+ *
+ * This mathematically binds the docId to the viewSecret, making it impossible
+ * for an attacker to generate a fake edit/view token for a victim's docId on any device.
  */
-export function getDocumentCapabilities(docId: string): { editSecret: string; viewSecret: string } {
-  const storageKey = 'libre_cap_' + docId;
-  if (typeof window !== 'undefined') {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.editSecret && parsed.viewSecret) {
-          return parsed;
-        }
-      }
-    } catch {}
-  }
-
-  // Generate 128-bit cryptographically secure random bytes
+export function createSelfCertifyingDoc(): { docId: string; editSecret: string; viewSecret: string } {
   const bytes = new Uint8Array(16);
   if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
     crypto.getRandomValues(bytes);
@@ -191,36 +184,108 @@ export function getDocumentCapabilities(docId: string): { editSecret: string; vi
     for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
   }
   const editSecret = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-  const viewSecret = sha256(editSecret + ':' + docId + ':libre_view_cap');
-
-  if (typeof window !== 'undefined') {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify({ editSecret, viewSecret }));
-    } catch {}
-  }
-  return { editSecret, viewSecret };
+  const viewSecret = sha256(editSecret + ':libre_view_cap');
+  const docId = 'doc_' + sha256(viewSecret + ':libre_doc_anchor').slice(0, 16);
+  return { docId, editSecret, viewSecret };
 }
 
 /**
- * Verifies a share token using self-contained SHA-256 capability verification.
+ * Capability-based cryptographic key store for documents.
+ */
+export function getDocumentCapabilities(docId: string): { editSecret: string; viewSecret: string; selfCertDocId: string } {
+  const storageKey = 'libre_cap_' + docId;
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.editSecret && parsed.viewSecret) {
+          const selfCert = 'doc_' + sha256(parsed.viewSecret + ':libre_doc_anchor').slice(0, 16);
+          return { editSecret: parsed.editSecret, viewSecret: parsed.viewSecret, selfCertDocId: selfCert };
+        }
+      }
+    } catch {}
+  }
+
+  // Generate new self-certifying keys
+  const newDoc = createSelfCertifyingDoc();
+  const selfCertDocId = docId.startsWith('doc_') && docId.length === 20 ? docId : newDoc.docId;
+
+  if (typeof window !== 'undefined') {
+    try {
+      const payload = {
+        editSecret: newDoc.editSecret,
+        viewSecret: newDoc.viewSecret,
+        selfCertDocId
+      };
+      localStorage.setItem(storageKey, JSON.stringify(payload));
+      if (selfCertDocId !== docId) {
+        localStorage.setItem('libre_cap_' + selfCertDocId, JSON.stringify(payload));
+      }
+    } catch {}
+  }
+  return { editSecret: newDoc.editSecret, viewSecret: newDoc.viewSecret, selfCertDocId };
+}
+
+/**
+ * Verifies a share token using self-certifying SHA-256 capability verification.
  * Works seamlessly across different devices/browsers without relying on pre-existing localStorage,
- * with ZERO insecure fallbacks or hardcoded salts.
+ * with ZERO insecure fallbacks and ZERO trust required.
  *
- * Supported formats:
- * - View capability: "v1_<viewSecret>"
- * - Edit capability: "e1_<editSecret>_<viewSecret>"
- * - Raw viewSecret/editSecret if locally known
- *
- * Returns:
- * - isView: true if token is a valid View capability
- * - isEdit: true if token is a mathematically verified Edit capability
+ * Proof verification:
+ * 1. Edit proof: SHA-256(SHA-256(token + ':libre_view_cap') + ':libre_doc_anchor').slice(0, 16) === docAnchor
+ * 2. View proof: SHA-256(token + ':libre_doc_anchor').slice(0, 16) === docAnchor
  */
 export function verifyShareCapability(
   docId: string, 
   token: string
 ): { isView: boolean; isEdit: boolean } {
-  if (!token) return { isView: false, isEdit: false };
+  if (!token || !docId) return { isView: false, isEdit: false };
 
+  // Strip optional protocol prefixes if present (e.g. v1_, e1_)
+  let cleanToken = token;
+  if (cleanToken.startsWith('v1_')) {
+    cleanToken = cleanToken.slice(3);
+  } else if (cleanToken.startsWith('e1_')) {
+    const parts = cleanToken.slice(3).split('_');
+    cleanToken = parts[0];
+  }
+
+  const docAnchor = docId.startsWith('doc_') ? docId.slice(4) : docId;
+
+  // 1. Mathematically self-certifying check (Tahoe-LAFS model):
+  // Does cleanToken derive the viewSecret that matches the document's anchor?
+  const derivedViewFromEdit = sha256(cleanToken + ':libre_view_cap');
+  const derivedAnchorFromEdit = sha256(derivedViewFromEdit + ':libre_doc_anchor').slice(0, 16);
+  if (derivedAnchorFromEdit === docAnchor) {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('libre_cap_' + docId, JSON.stringify({
+          editSecret: cleanToken,
+          viewSecret: derivedViewFromEdit,
+          selfCertDocId: docId
+        }));
+      } catch {}
+    }
+    return { isView: true, isEdit: true };
+  }
+
+  // Does cleanToken directly match the document's view anchor?
+  const derivedAnchorFromView = sha256(cleanToken + ':libre_doc_anchor').slice(0, 16);
+  if (derivedAnchorFromView === docAnchor) {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('libre_cap_' + docId, JSON.stringify({
+          editSecret: '',
+          viewSecret: cleanToken,
+          selfCertDocId: docId
+        }));
+      } catch {}
+    }
+    return { isView: true, isEdit: false };
+  }
+
+  // 2. Local anchor check (if document exists in local browser storage):
   let expectedViewSecret = '';
   let storedEditSecret = '';
 
@@ -243,60 +308,17 @@ export function verifyShareCapability(
     } catch {}
   }
 
-  // 1. Self-contained Edit capability: "e1_<candidateEditSecret>_<targetViewSecret>"
-  if (token.startsWith('e1_')) {
-    const parts = token.slice(3).split('_');
-    if (parts.length === 2) {
-      const [candidateEditSecret, targetViewSecret] = parts;
-      // Mathematically verify that candidateEditSecret hashes to targetViewSecret
-      const computedHash = sha256(candidateEditSecret + ':' + docId + ':libre_view_cap');
-      if (computedHash === targetViewSecret) {
-        // If local document already has a registered viewSecret, ensure targetViewSecret matches it
-        if (!expectedViewSecret || targetViewSecret === expectedViewSecret) {
-          if (typeof window !== 'undefined') {
-            try {
-              localStorage.setItem('libre_cap_' + docId, JSON.stringify({
-                editSecret: candidateEditSecret,
-                viewSecret: targetViewSecret
-              }));
-            } catch {}
-          }
-          return { isView: true, isEdit: true };
-        }
-      }
-    }
-    return { isView: false, isEdit: false };
-  }
-
-  // 2. Self-contained View capability: "v1_<viewSecret>"
-  if (token.startsWith('v1_')) {
-    const rawViewSecret = token.slice(3);
-    if (expectedViewSecret && rawViewSecret !== expectedViewSecret) {
-      return { isView: false, isEdit: false };
-    }
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('libre_cap_' + docId, JSON.stringify({
-          editSecret: '',
-          viewSecret: rawViewSecret
-        }));
-      } catch {}
-    }
-    return { isView: true, isEdit: false };
-  }
-
-  // 3. Raw capability tokens (where expectedViewSecret is locally known)
   if (expectedViewSecret) {
-    if (token === expectedViewSecret) {
+    if (cleanToken === expectedViewSecret) {
       return { isView: true, isEdit: false };
     }
-    const hashOfToken = sha256(token + ':' + docId + ':libre_view_cap');
-    if (hashOfToken === expectedViewSecret || (storedEditSecret && token === storedEditSecret)) {
+    const hashOfToken = sha256(cleanToken + ':libre_view_cap');
+    if (hashOfToken === expectedViewSecret || (storedEditSecret && cleanToken === storedEditSecret)) {
       return { isView: true, isEdit: true };
     }
   }
 
-  // Any unverified or tampered token is strictly rejected (no insecure legacy fallback)
+  // Strictly reject unauthenticated tokens
   return { isView: false, isEdit: false };
 }
 
