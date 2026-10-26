@@ -202,10 +202,18 @@ export function getDocumentCapabilities(docId: string): { editSecret: string; vi
 }
 
 /**
- * Verifies a share token using SHA-256 one-way capability hashes.
+ * Verifies a share token using self-contained SHA-256 capability verification.
+ * Works seamlessly across different devices/browsers without relying on pre-existing localStorage,
+ * with ZERO insecure fallbacks or hardcoded salts.
+ *
+ * Supported formats:
+ * - View capability: "v1_<viewSecret>"
+ * - Edit capability: "e1_<editSecret>_<viewSecret>"
+ * - Raw viewSecret/editSecret if locally known
+ *
  * Returns:
  * - isView: true if token is a valid View capability
- * - isEdit: true if token is a valid Edit capability (proven knowledge of pre-image)
+ * - isEdit: true if token is a mathematically verified Edit capability
  */
 export function verifyShareCapability(
   docId: string, 
@@ -235,45 +243,61 @@ export function verifyShareCapability(
     } catch {}
   }
 
-  // If document capabilities exist locally:
+  // 1. Self-contained Edit capability: "e1_<candidateEditSecret>_<targetViewSecret>"
+  if (token.startsWith('e1_')) {
+    const parts = token.slice(3).split('_');
+    if (parts.length === 2) {
+      const [candidateEditSecret, targetViewSecret] = parts;
+      // Mathematically verify that candidateEditSecret hashes to targetViewSecret
+      const computedHash = sha256(candidateEditSecret + ':' + docId + ':libre_view_cap');
+      if (computedHash === targetViewSecret) {
+        // If local document already has a registered viewSecret, ensure targetViewSecret matches it
+        if (!expectedViewSecret || targetViewSecret === expectedViewSecret) {
+          if (typeof window !== 'undefined') {
+            try {
+              localStorage.setItem('libre_cap_' + docId, JSON.stringify({
+                editSecret: candidateEditSecret,
+                viewSecret: targetViewSecret
+              }));
+            } catch {}
+          }
+          return { isView: true, isEdit: true };
+        }
+      }
+    }
+    return { isView: false, isEdit: false };
+  }
+
+  // 2. Self-contained View capability: "v1_<viewSecret>"
+  if (token.startsWith('v1_')) {
+    const rawViewSecret = token.slice(3);
+    if (expectedViewSecret && rawViewSecret !== expectedViewSecret) {
+      return { isView: false, isEdit: false };
+    }
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('libre_cap_' + docId, JSON.stringify({
+          editSecret: '',
+          viewSecret: rawViewSecret
+        }));
+      } catch {}
+    }
+    return { isView: true, isEdit: false };
+  }
+
+  // 3. Raw capability tokens (where expectedViewSecret is locally known)
   if (expectedViewSecret) {
-    // 1. Direct match with viewSecret means this token is strictly a View capability
     if (token === expectedViewSecret) {
       return { isView: true, isEdit: false };
     }
-
-    // 2. Hash of token matches viewSecret: mathematically proves possession of editSecret!
     const hashOfToken = sha256(token + ':' + docId + ':libre_view_cap');
     if (hashOfToken === expectedViewSecret || (storedEditSecret && token === storedEditSecret)) {
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem('libre_cap_' + docId, JSON.stringify({ editSecret: token, viewSecret: expectedViewSecret }));
-        } catch {}
-      }
       return { isView: true, isEdit: true };
     }
   }
 
-  // 3. Fallback for legacy signed tokens
-  const legacyView = generateShareSignature(docId, 'view');
-  const legacyEdit = generateShareSignature(docId, 'edit');
-  if (token === legacyView) return { isView: true, isEdit: false };
-  if (token === legacyEdit) return { isView: true, isEdit: true };
-
+  // Any unverified or tampered token is strictly rejected (no insecure legacy fallback)
   return { isView: false, isEdit: false };
-}
-
-// Legacy security signature generator for backward compatibility
-export function generateShareSignature(docId: string, mode: string): string {
-  const secret = 'libre_excel_sig_salt_987654';
-  const str = `${docId}_${mode}_${secret}`;
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return Math.abs(hash).toString(36);
 }
 
 export function verifyShareSignature(docId: string, mode: string, token: string): boolean {

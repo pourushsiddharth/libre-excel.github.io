@@ -66,7 +66,9 @@ export const ShareModal: React.FC = () => {
   }
   searchParams.set('mode', permission);
   const { editSecret, viewSecret } = getDocumentCapabilities(docId);
-  const token = permission === 'edit' ? editSecret : viewSecret;
+  const token = permission === 'edit'
+    ? `e1_${editSecret}_${viewSecret}`
+    : `v1_${viewSecret}`;
   searchParams.set('token', token);
 
   const exactSheetUrl = `${origin}${pathname}?${searchParams.toString()}`;
