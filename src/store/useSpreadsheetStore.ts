@@ -180,23 +180,32 @@ const getInitialStateFromUrl = () => {
         }
       }
 
-      // If document was shared with view mode or user lacks valid edit token/ownership:
-      if (urlMode === 'view') {
+      // Check cryptographic tokens
+      const isViewToken = urlToken ? verifyShareSignature(urlDoc, 'view', urlToken) : false;
+      const hasValidEditToken = urlToken ? verifyShareSignature(urlDoc, 'edit', urlToken) : false;
+      const previouslyLocked = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('libre_locked_doc_' + urlDoc) === 'view';
+
+      // 1. Explicit view mode OR a View-signed token is present
+      if (urlMode === 'view' || isViewToken) {
         initialPermissionMode = 'view';
         isLockedView = true;
         sessionStorage.setItem('libre_locked_doc_' + urlDoc, 'view');
-      } else if (urlMode === 'edit') {
-        // If someone previously had view access or URL is manually altered without valid token
-        const previouslyLocked = sessionStorage.getItem('libre_locked_doc_' + urlDoc) === 'view';
-        const hasValidEditToken = urlToken ? verifyShareSignature(urlDoc, 'edit', urlToken) : false;
 
-        if (!isLocalOwner && (previouslyLocked || !hasValidEditToken)) {
-          // TAMPER DETECTED: Recipient changed 'mode=view' to 'mode=edit' in URL
-          console.warn('Unauthorized attempt to elevate to edit mode. Reverting to view-only.');
+        // If someone tampered with the URL by replacing 'mode=view' with 'mode=edit' while keeping the view token:
+        if (urlMode === 'edit') {
+          console.warn('Unauthorized attempt to elevate to edit mode with view token. Reverting to view-only.');
+          const cleanUrl = new URL(window.location.href);
+          cleanUrl.searchParams.set('mode', 'view');
+          window.history.replaceState({}, '', cleanUrl.toString());
+        }
+      } else if (urlMode === 'edit') {
+        // Attempting edit mode: requires a valid edit signature if URL token was supplied,
+        // or if document was previously locked to view in this session, or if user is an external visitor
+        if (!hasValidEditToken && (urlToken || previouslyLocked || !isLocalOwner)) {
+          console.warn('Unauthorized attempt to elevate to edit mode without valid edit token. Reverting to view-only.');
           initialPermissionMode = 'view';
           isLockedView = true;
           sessionStorage.setItem('libre_locked_doc_' + urlDoc, 'view');
-          // Clean URL back to view
           const cleanUrl = new URL(window.location.href);
           cleanUrl.searchParams.set('mode', 'view');
           cleanUrl.searchParams.delete('token');
@@ -205,6 +214,10 @@ const getInitialStateFromUrl = () => {
           initialPermissionMode = 'edit';
           isLockedView = false;
         }
+      } else if (previouslyLocked && !hasValidEditToken) {
+        // Previously locked in this browser tab and no valid edit token provided
+        initialPermissionMode = 'view';
+        isLockedView = true;
       }
     } else {
       const savedDocId = localStorage.getItem('libre_current_doc_id');
