@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { Worksheet, SheetData, CellCoords, SelectionRange, CellStyle, ThemeMode, ChartConfig, CellComment } from '../types/spreadsheet';
-import { coordsToCellId, parseRange, cellIdToCoords, colIndexToLetter, verifyShareSignature } from '../engine/helpers';
+import { coordsToCellId, parseRange, cellIdToCoords, colIndexToLetter, verifyShareSignature, getDocumentCapabilities } from '../engine/helpers';
 import { evaluateFormula } from '../engine/parser';
 import { TEMPLATES } from '../engine/templates';
 
@@ -313,7 +313,8 @@ export const useSpreadsheetStore = create<SpreadsheetState>((set, get) => ({
     if (typeof window !== 'undefined') {
       const ownerId = localStorage.getItem('libre_owner_token') || 'owner_' + Math.random().toString(36).substring(2, 9);
       localStorage.setItem('libre_owner_token', ownerId);
-      localStorage.setItem('libre_doc_' + docId, JSON.stringify({ documentTitle: title, sheets, activeSheetId, ownerId }));
+      const { editSecret, viewSecret } = getDocumentCapabilities(docId);
+      localStorage.setItem('libre_doc_' + docId, JSON.stringify({ documentTitle: title, sheets, activeSheetId, ownerId, editSecret, viewSecret }));
     }
   },
 

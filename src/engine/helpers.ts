@@ -86,7 +86,184 @@ export function isColorDark(color?: string): boolean {
   return darkNames.includes(c);
 }
 
-// Security signature generator for signed share tokens
+/**
+ * RFC 6234 Standard SHA-256 synchronous cryptographic hash function.
+ * Produces an irreversible 256-bit (64 hex character) digest.
+ */
+export function sha256(ascii: string): string {
+  function rightRotate(value: number, amount: number): number {
+    return (value >>> amount) | (value << (32 - amount));
+  }
+  const mathPow = Math.pow;
+  const maxWord = mathPow(2, 32);
+  let i = 0, j = 0;
+  let result = '';
+  const words: number[] = [];
+  const asciiBitLength = ascii.length * 8;
+  const hash: number[] = [];
+  const k: number[] = [];
+  let primeCounter = 0;
+  const isComposite: { [key: number]: number } = {};
+
+  for (let candidate = 2; primeCounter < 64; candidate++) {
+    if (!isComposite[candidate]) {
+      for (i = 0; i < 313; i += candidate) {
+        isComposite[i] = candidate;
+      }
+      hash[primeCounter] = (mathPow(candidate, 0.5) * maxWord) | 0;
+      k[primeCounter++] = (mathPow(candidate, 1 / 3) * maxWord) | 0;
+    }
+  }
+
+  ascii += '\x80';
+  while ((ascii.length % 64) - 56) ascii += '\x00';
+  for (i = 0; i < ascii.length; i++) {
+    j = ascii.charCodeAt(i);
+    words[i >> 2] |= j << ((3 - i) % 4) * 8;
+  }
+  words[words.length] = (asciiBitLength / maxWord) | 0;
+  words[words.length] = asciiBitLength;
+
+  for (j = 0; j < words.length;) {
+    const w = words.slice(j, (j += 16));
+    const oldHash = [...hash];
+    for (i = 0; i < 64; i++) {
+      const w15 = w[i - 15], w2 = w[i - 2];
+      const a = hash[0], e = hash[4];
+      const temp1 =
+        hash[7] +
+        (rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25)) +
+        ((e & hash[5]) ^ (~e & hash[6])) +
+        k[i] +
+        (w[i] = i < 16 ? w[i] : (
+          w[i - 16] +
+          (rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3)) +
+          w[i - 7] +
+          (rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10))
+        ) | 0);
+      const temp2 =
+        (rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22)) +
+        ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]));
+      hash.unshift((temp1 + temp2) | 0);
+      hash.length = 8;
+      hash[4] = (hash[4] + temp1) | 0;
+    }
+    for (i = 0; i < 8; i++) {
+      hash[i] = (hash[i] + oldHash[i]) | 0;
+    }
+  }
+
+  for (i = 0; i < 8; i++) {
+    for (j = 3; j >= 0; j--) {
+      const b = (hash[i] >> (j * 8)) & 255;
+      result += (b < 16 ? '0' : '') + b.toString(16);
+    }
+  }
+  return result;
+}
+
+/**
+ * Capability-based cryptographic key store for documents.
+ * - editSecret: 128-bit high-entropy random secret key (known only by creator/editors).
+ * - viewSecret: SHA-256(editSecret + ':' + docId + ':libre_view_cap')
+ * Because SHA-256 is an irreversible one-way cryptographic hash, holders of viewSecret
+ * cannot mathematically reverse-engineer editSecret even with full access to the client code.
+ */
+export function getDocumentCapabilities(docId: string): { editSecret: string; viewSecret: string } {
+  const storageKey = 'libre_cap_' + docId;
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.editSecret && parsed.viewSecret) {
+          return parsed;
+        }
+      }
+    } catch {}
+  }
+
+  // Generate 128-bit cryptographically secure random bytes
+  const bytes = new Uint8Array(16);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  const editSecret = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  const viewSecret = sha256(editSecret + ':' + docId + ':libre_view_cap');
+
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify({ editSecret, viewSecret }));
+    } catch {}
+  }
+  return { editSecret, viewSecret };
+}
+
+/**
+ * Verifies a share token using SHA-256 one-way capability hashes.
+ * Returns:
+ * - isView: true if token is a valid View capability
+ * - isEdit: true if token is a valid Edit capability (proven knowledge of pre-image)
+ */
+export function verifyShareCapability(
+  docId: string, 
+  token: string
+): { isView: boolean; isEdit: boolean } {
+  if (!token) return { isView: false, isEdit: false };
+
+  let expectedViewSecret = '';
+  let storedEditSecret = '';
+
+  if (typeof window !== 'undefined') {
+    try {
+      const capSaved = localStorage.getItem('libre_cap_' + docId);
+      if (capSaved) {
+        const parsed = JSON.parse(capSaved);
+        expectedViewSecret = parsed.viewSecret || '';
+        storedEditSecret = parsed.editSecret || '';
+      }
+      if (!expectedViewSecret) {
+        const docSaved = localStorage.getItem('libre_doc_' + docId);
+        if (docSaved) {
+          const parsedDoc = JSON.parse(docSaved);
+          expectedViewSecret = parsedDoc.viewSecret || '';
+          storedEditSecret = parsedDoc.editSecret || '';
+        }
+      }
+    } catch {}
+  }
+
+  // If document capabilities exist locally:
+  if (expectedViewSecret) {
+    // 1. Direct match with viewSecret means this token is strictly a View capability
+    if (token === expectedViewSecret) {
+      return { isView: true, isEdit: false };
+    }
+
+    // 2. Hash of token matches viewSecret: mathematically proves possession of editSecret!
+    const hashOfToken = sha256(token + ':' + docId + ':libre_view_cap');
+    if (hashOfToken === expectedViewSecret || (storedEditSecret && token === storedEditSecret)) {
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('libre_cap_' + docId, JSON.stringify({ editSecret: token, viewSecret: expectedViewSecret }));
+        } catch {}
+      }
+      return { isView: true, isEdit: true };
+    }
+  }
+
+  // 3. Fallback for legacy signed tokens
+  const legacyView = generateShareSignature(docId, 'view');
+  const legacyEdit = generateShareSignature(docId, 'edit');
+  if (token === legacyView) return { isView: true, isEdit: false };
+  if (token === legacyEdit) return { isView: true, isEdit: true };
+
+  return { isView: false, isEdit: false };
+}
+
+// Legacy security signature generator for backward compatibility
 export function generateShareSignature(docId: string, mode: string): string {
   const secret = 'libre_excel_sig_salt_987654';
   const str = `${docId}_${mode}_${secret}`;
@@ -94,13 +271,16 @@ export function generateShareSignature(docId: string, mode: string): string {
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
+    hash = hash & hash;
   }
   return Math.abs(hash).toString(36);
 }
 
 export function verifyShareSignature(docId: string, mode: string, token: string): boolean {
-  return generateShareSignature(docId, mode) === token;
+  const cap = verifyShareCapability(docId, token);
+  if (mode === 'edit') return cap.isEdit;
+  if (mode === 'view') return cap.isView;
+  return false;
 }
 
 /**

@@ -6,7 +6,7 @@ import {
   Link2
 } from 'lucide-react';
 import { useSpreadsheetStore } from '../../store/useSpreadsheetStore';
-import { coordsToCellId, generateShareSignature } from '../../engine/helpers';
+import { coordsToCellId, getDocumentCapabilities } from '../../engine/helpers';
 import confetti from 'canvas-confetti';
 
 export const ShareModal: React.FC = () => {
@@ -33,11 +33,12 @@ export const ShareModal: React.FC = () => {
   // Sync state to storage
   useEffect(() => {
     if (isShareModalOpen && typeof window !== 'undefined') {
+      const { editSecret, viewSecret } = getDocumentCapabilities(docId);
       const ownerId = localStorage.getItem('libre_owner_token') || 'owner_' + Math.random().toString(36).substring(2, 9);
       localStorage.setItem('libre_owner_token', ownerId);
       localStorage.setItem(
         'libre_doc_' + docId,
-        JSON.stringify({ documentTitle, sheets, activeSheetId, ownerId })
+        JSON.stringify({ documentTitle, sheets, activeSheetId, ownerId, editSecret, viewSecret })
       );
     }
   }, [isShareModalOpen, docId, documentTitle, sheets, activeSheetId]);
@@ -64,7 +65,8 @@ export const ShareModal: React.FC = () => {
     searchParams.set('cell', cellId);
   }
   searchParams.set('mode', permission);
-  const token = generateShareSignature(docId, permission);
+  const { editSecret, viewSecret } = getDocumentCapabilities(docId);
+  const token = permission === 'edit' ? editSecret : viewSecret;
   searchParams.set('token', token);
 
   const exactSheetUrl = `${origin}${pathname}?${searchParams.toString()}`;
